@@ -1,8 +1,8 @@
 <!DOCTYPE html>
 <html>
   <body>
-    <div id=app>Now loading...</div>
-    <script>
+    <div id="app">Now loading...</div>
+    <script type="module">
      function selectPath(doc) {
        const p = doc.name.match(/\/posts\/(.*)/);
        return p[0];
@@ -14,15 +14,68 @@
        if (location.pathname === '/') {
          const response = await fetch('https://firestore.googleapis.com/v1/projects/coolblog-c1617/databases/(default)/documents/posts?mask.fieldPaths=name&mask.fieldPaths=title');
          const payload = await response.json();
-         const html = payload.documents.map(doc => `<li><a href="${selectPath(doc)}">${selectTitle(doc)}</a></li>`).join('');
-         document.getElementById('app').innerHTML = html;
+         const items = payload.documents.map(doc => `<li><a href="${selectPath(doc)}">${selectTitle(doc)}</a></li>`).join('');
+         document.getElementById('app').innerHTML = `<h1>Cool Blog</h1><ul>${items}</ul>`;
        } else if (location.pathname.startsWith('/posts/')) {
          const id = location.pathname.slice(7);
          const response = await fetch(`https://firestore.googleapis.com/v1/projects/coolblog-c1617/databases/(default)/documents/posts/${id}`);
          const payload = await response.json();
          const { title, body, type } = Object.fromEntries(Object.entries(payload.fields).map(([key, value]) => [key, value.stringValue]));
-         const html = `<h1>${title}</h1><p>${body}</p><p>Category: ${type}</p><p><a href="/">Back to index</a></p>`;
+         const html = `
+<h1>${title}</h1>
+<p>${body}</p>
+<p>Category: ${type}</p>
+<p><a href="/">Back to index</a></p>
+`;
          document.getElementById('app').innerHTML = html;
+       } else if (location.pathname === '/admin') {
+         await import('/__/firebase/7.14.4/firebase-app.js');
+         await import('/__/firebase/7.14.4/firebase-auth.js');
+         await import('/__/firebase/init.js');
+         firebase.auth().onAuthStateChanged(function(user) {
+           if (user) {
+             user.getIdToken().then(async function(idToken) {
+               const html = `
+<h1>Add new article</h1>
+<p><input id="title" value="Title" /></p>
+<p><input id="type" value="Type" /></p>
+</p><textarea id="body">Body</textarea>
+<p><button id="submit">Publish</button></p>
+`;
+               document.getElementById('app').innerHTML = html;
+               document.getElementById('submit').addEventListener('click', async function() {
+                 const fields = {
+                   title: { stringValue: document.getElementById('title').value },
+                   type: { stringValue: document.getElementById('type').value },
+                   body: { stringValue: document.getElementById('body').value },
+                 };
+                 const options = {
+                   method: 'POST',
+                   headers: {
+                     'Content-Type': 'application/json',
+                     'Authorization': `Bearer ${idToken}`,
+                   },
+                   body: JSON.stringify({ fields }),
+                 };
+                 const response = await fetch(`https://firestore.googleapis.com/v1/projects/coolblog-c1617/databases/(default)/documents/posts`, options);
+                 const payload = await response.json();
+                 const html = `<p><a href="${selectPath(payload)}">See published article</a></p>`
+                 document.getElementById('app').innerHTML = html;
+               });
+             }).catch(function(error) {
+               console.log('getIdToken failed:', error);
+             });
+           } else {
+             const html = '<button id="signin">Sign In</button>'
+             document.getElementById('app').innerHTML = html;
+             document.getElementById('signin').addEventListener('click', function() {
+               const provider = new firebase.auth.GoogleAuthProvider();
+               firebase.auth().signInWithPopup(provider).catch(function(error) {
+                 console.log('signInWithPopup failed:', error);
+               });
+             });
+           }
+         });
        } else {
          document.getElementById('app').innerHTML = `Not found: ${location.pathname}`;
        }
